@@ -11,25 +11,27 @@ s3_client = boto3.client('s3')
 API_URL = "https://data.incovid19.org/v4/min/data.min.json"
 
 # State list definitions by format
-CSV_STATES = ["MP", "UP", "AP", "KL", "RJ", "HP", "WB"]     # Madhya Pradesh, Uttar Pradesh, Andhra Pradesh, Kerala, Rajasthan, Himachal Pradesh, West Bengal
+JSON_STATES = ["AS", "NL", "ML", "AR"]                       # Assam, Nagaland, Meghalaya, Arunachal Pradesh
 XML_STATES = ["DL", "HR", "UT", "PB"]                       # Delhi, Haryana, Uttarakhand, Punjab
+CSV_STATES = ["MP", "UP", "AP", "KL", "RJ", "HP", "WB"]     # Madhya Pradesh, Uttar Pradesh, Andhra Pradesh, Kerala, Rajasthan, Himachal Pradesh, West Bengal
 
 def lambda_handler(event, context):
     s3_bucket = os.environ.get("S3_SOURCE_BUCKET_NAME", "covid-etl-source-bucket")
     
     try:
         # 1. Fetch raw data from API
-        url = "https://data.incovid19.org/v4/min/data.min.json"
-        response = urllib.request.urlopen(url)
-        data = json.loads(response.read().decode())
+        req = urllib.request.Request(API_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # 2. Upload full raw JSON (JSON parser filters AS, NL, ML, AR dynamically)
+        # 2. Filter and Upload JSON file (using AS, NL, ML, AR)
+        json_data = {state: data[state] for state in JSON_STATES if state in data}
         s3_client.put_object(
             Bucket=s3_bucket,
             Key=f"raw/covid_data_{timestamp}.json",
-            Body=json.dumps(data, indent=4),
+            Body=json.dumps(json_data, indent=4),
             ContentType="application/json"
         )
         
