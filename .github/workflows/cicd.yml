@@ -1,0 +1,14 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt || true
+      - run: python -m py_compile lambda_function.py lambda_json.py lambda_csv.py lambda_xml.py lambda_fetch.py
