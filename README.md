@@ -180,7 +180,7 @@ Create a DynamoDB table named `covid_filtered_table` with `state` as the Partiti
 
 ### 4. Create S3 event Notification
 1. Open the source S3 bucket properties.
-2. Under **Event notifications**, add a trigger on `All object create events` (`s3:ObjectCreated:*`).
+2. Under **Event notifications**, add a trigger on `PUT` (`s3:ObjectCreated:*`).
 3. Set the destination to the Processor Lambda function (`covid-parser-lambda`).
 
 ### 5. Set up EventBridge Schedule (Automated Trigger)
