@@ -18,7 +18,10 @@ phases:
       - zip lambda_fetch.zip lambda_fetch.py
   post_build:
     commands:
-      - echo "Build completed on `date`"
+      - echo "Deploying Lambda functions directly to AWS..."
+      - aws lambda update-function-code --function-name covid-fetcher-lambda --zip-file fileb://lambda_fetch.zip
+      - aws lambda update-function-code --function-name covid-parser-lambda --zip-file fileb://lambda_function.zip
+      - echo "Deployment completed successfully!"
 
 artifacts:
   files:
