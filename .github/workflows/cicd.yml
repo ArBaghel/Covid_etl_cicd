@@ -11,4 +11,4 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt || true
-      - run: python -m py_compile lambda_function.py lambda_json.py lambda_csv.py lambda_xml.py lambda_fetch.py
+      - run: python -m py_compile lambda_function.py lambda_fetch.py

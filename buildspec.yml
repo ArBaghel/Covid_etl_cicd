@@ -10,14 +10,11 @@ phases:
   pre_build:
     commands:
       - echo "Validating syntax..."
-      - python -m py_compile lambda_function.py lambda_json.py lambda_csv.py lambda_xml.py lambda_fetch.py
+      - python -m py_compile lambda_function.py lambda_fetch.py
   build:
     commands:
       - echo "Packaging Lambda functions..."
-      - zip lambda_router.zip lambda_function.py
-      - zip lambda_json.zip lambda_json.py
-      - zip lambda_csv.zip lambda_csv.py
-      - zip lambda_xml.zip lambda_xml.py
+      - zip lambda_function.zip lambda_function.py
       - zip lambda_fetch.zip lambda_fetch.py
   post_build:
     commands:
@@ -25,8 +22,5 @@ phases:
 
 artifacts:
   files:
-    - lambda_router.zip
-    - lambda_json.zip
-    - lambda_csv.zip
-    - lambda_xml.zip
+    - lambda_function.zip
     - lambda_fetch.zip

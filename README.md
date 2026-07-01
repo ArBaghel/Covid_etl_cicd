@@ -1,19 +1,66 @@
-# COVID-19 ETL CI/CD Pipeline (S3 → Lambda Router → Individual Parsers → DynamoDB)
+# COVID-19 ETL CI/CD Pipeline (S3 → Unified Parser Lambda → DynamoDB & S3)
 
-A modular, serverless ETL (Extract, Transform, Load) pipeline that processes COVID-19 datasets (supporting JSON, CSV, and XML file formats) uploaded to an S3 bucket, validates and extracts key state-level metrics, and loads the results into DynamoDB and an output S3 bucket. The entire lifecycle is validated using GitHub Actions and prepared for AWS deployment via AWS CodeBuild.
+A serverless ETL (Extract, Transform, Load) pipeline that fetches daily COVID-19 datasets (supporting JSON, CSV, and XML formats), stores raw records in S3, triggers a unified Lambda parser to extract metrics for specific states (MP, UP, KL, AP), and loads the results into a DynamoDB table and an S3 output folder. The pipeline is tested via GitHub Actions CI and compiled/packaged via AWS CodeBuild.
 
 ---
 
 ## Architecture Overview
 
-![Architecture Diagram](screenshots/architecture_diagram.png)
+```mermaid
+graph TD
+    %% Input Layer
+    subgraph Data Input
+        EventBridge[EventBridge Cron Schedule] -->|1. Triggers fetch| Fetcher[Fetcher Lambda: lambda_fetch.py]
+        Fetcher -->|2. Writes raw formats| S3Source[S3 Source Bucket]
+    end
+
+    %% Processing Layer
+    subgraph ETL Processing Layer
+        S3Source -->|3. S3 Event Notification| Parser[Processor Lambda: lambda_function.py]
+        Parser -->|4. Detects extension & parses| Process[Extract metrics for: MP, UP, KL, AP]
+    end
+
+    %% Storage Layer
+    subgraph Storage Layer
+        Process -->|5a. Save JSON| S3Dest[S3 Output Bucket]
+        Process -->|5b. Write Records| DynamoDB[(DynamoDB Table: covid_filtered_table)]
+    end
+
+    style EventBridge fill:#ECECFF,stroke:#9370DB,stroke-width:2px
+    style Fetcher fill:#FF9900,stroke:#d87b00,stroke-width:2px,color:#fff
+    style S3Source fill:#FF9900,stroke:#d87b00,stroke-width:2px,color:#fff
+    style Parser fill:#FF9900,stroke:#d87b00,stroke-width:2px,color:#fff
+    style Process fill:#00A88F,stroke:#007a68,stroke-width:2px,color:#fff
+    style S3Dest fill:#FF9900,stroke:#d87b00,stroke-width:2px,color:#fff
+    style DynamoDB fill:#527FFF,stroke:#3b5cb8,stroke-width:2px,color:#fff
+```
 
 ---
 
-## ETL Flow (Router & Parsers)
+## ETL Flow
 
-![ETL Flowchart](screenshots/etl_flowchart.png)
+```mermaid
+graph TD
+    Start([S3 Upload Event]) --> S3Read[Read S3 Bucket & Key]
+    S3Read --> Inspect[Inspect File Extension]
+    
+    Inspect -->|If .json| ParseJSON[Parse Nested JSON Structure]
+    Inspect -->|If .csv| ParseCSV[Parse CSV Rows via csv.DictReader]
+    Inspect -->|If .xml| ParseXML[Parse XML Elements via ElementTree]
+    
+    ParseJSON --> Transform[Filter Target States: MP, UP, KL, AP]
+    ParseCSV --> Transform
+    ParseXML --> Transform
+    
+    Transform --> Calculate[Calculate non_vaccination = population - vaccination]
+    Calculate --> LoadS3[Load: Upload Clean JSON to Output S3 Bucket]
+    Calculate --> LoadDB[Load: Insert State Records to DynamoDB Table]
 
+    style Start fill:#ECECFF,stroke:#9370DB,stroke-width:2px
+    style Inspect fill:#00A88F,stroke:#007a68,stroke-width:2px,color:#fff
+    style LoadS3 fill:#FF9900,stroke:#d87b00,stroke-width:2px,color:#fff
+    style LoadDB fill:#527FFF,stroke:#3b5cb8,stroke-width:2px,color:#fff
+```
 
 ---
 
@@ -48,8 +95,8 @@ Developer pushes code changes to GitHub
      │                       │       │    lambda packages    │
      │  ✅ Success on valid  │       │                       │
      │  ❌ Fail on syntax    │       │  📦 Outputs:          │
-     │     errors            │       │     - router.zip      │
-     │                       │       │     - json.zip...     │
+     │     errors            │       │     - fetch.zip       │
+     │                       │       │     - function.zip    │
      └───────────────────────┘       └───────────────────────┘
 ```
 
@@ -58,11 +105,10 @@ Developer pushes code changes to GitHub
 ## Dataset & Targets
 
 * **Primary Dataset Source:** [inCOVID19 India COVID-19 API](https://data.incovid19.org/)
-* **Monitored States:**
-  * **MP** - Madhya Pradesh
-  * **UP** - Uttar Pradesh
-  * **KL** - Kerala
-  * **AP** - Andhra Pradesh
+* **Monitored States by Format:**
+  * **JSON**: Assam (`AS`), Nagaland (`NL`), Meghalaya (`ML`), Arunachal Pradesh (`AR`)
+  * **XML**: Delhi (`DL`), Haryana (`HR`), Uttarakhand (`UT`), Punjab (`PB`)
+  * **CSV**: Madhya Pradesh (`MP`), Uttar Pradesh (`UP`), Andhra Pradesh (`AP`), Kerala (`KL`), Rajasthan (`RJ`), Himachal Pradesh (`HP`), West Bengal (`WB`)
 
 ---
 
@@ -71,9 +117,9 @@ Developer pushes code changes to GitHub
 | Service | Role |
 |---|---|
 | **Amazon S3** | Data Lake — stores source uploads (`.json`, `.csv`, `.xml`) and output files |
-| **AWS Lambda** | Modular ETL Engines — 1 Router Lambda + 3 Parser Lambdas |
+| **AWS Lambda** | ETL Engines — 1 Fetcher Lambda + 1 Unified Processor Lambda |
 | **Amazon DynamoDB** | Clean Record Store — stores final processed states data |
-| **AWS IAM** | Execution roles giving Lambda permissions to S3, DynamoDB, and child Lambda invocation |
+| **AWS IAM** | Execution roles giving Lambda permissions to S3 and DynamoDB |
 | **AWS CodeBuild** | Runs compilation validation and packages individual Lambda zip files |
 | **GitHub Actions** | Automated CI pipeline checking syntax errors on push/pull requests |
 
@@ -97,13 +143,10 @@ UP         │ 2128103     │ 2102602   │ 23620  │ 154210982   │ 83610920
 ## Repository Structure
 
 ```
-etl-s3-lambda-router-parsers/
+etl-s3-lambda-unified-parser/
 ├── README.md                      # Detailed System Documentation
-├── lambda_function.py             # Router Lambda (routes events based on extension)
-├── lambda_json.py                 # JSON parser Lambda
-├── lambda_csv.py                  # CSV parser Lambda
-├── lambda_xml.py                  # XML parser Lambda
-├── lambda_fetch.py               # Fetcher Lambda (fetches COVID API -> uploads JSON/CSV/XML to S3)
+├── lambda_function.py             # Unified Processor Lambda (processes JSON, CSV, and XML)
+├── lambda_fetch.py                # Fetcher Lambda (fetches COVID API -> uploads JSON/CSV/XML to S3)
 ├── requirements.txt               # Main python dependency file (boto3)
 ├── buildspec.yml                  # CodeBuild instructions to package Lambda ZIPs
 └── .github/
@@ -124,25 +167,21 @@ Create two S3 buckets in your AWS account:
 Create a DynamoDB table named `covid_filtered_table` with `state` as the Partition key (String).
 
 ### 3. Deploy Lambda Functions
-1. Create five Lambda functions in the AWS Console (Python 3.11).
+1. Create two Lambda functions in the AWS Console (Python 3.11).
 2. Upload the zipped code generated by your CodeBuild/pipeline or insert the raw code files:
    * **Fetcher Lambda**: `lambda_fetch.py`
-   * **Router Lambda**: `lambda_function.py`
-   * **JSON Parser**: `lambda_json.py`
-   * **CSV Parser**: `lambda_csv.py`
-   * **XML Parser**: `lambda_xml.py`
+   * **Processor Lambda**: `lambda_function.py`
 3. Configure environment variables:
    * For the **Fetcher Lambda**: Set `S3_SOURCE_BUCKET_NAME` = Name of your S3 source bucket.
-   * For the **Parser Lambdas**: Set `OUTPUT_BUCKET_NAME` = Name of your output bucket, and `DYNAMODB_TABLE_NAME` = `covid_filtered_table`.
+   * For the **Processor Lambda**: Set `OUTPUT_BUCKET_NAME` = Name of your output bucket, and `DYNAMODB_TABLE_NAME` = `covid_filtered_table`.
 4. Configure permissions (IAM execution roles):
    * **Fetcher Lambda**: Needs S3 Write (`s3:PutObject`) permissions.
-   * **Router Lambda**: Needs permission to execute/invoke parser functions (`lambda:InvokeFunction`).
-   * **Parser Lambdas**: Needs S3 Read/Write (`s3:GetObject`, `s3:PutObject`) and DynamoDB Write (`dynamodb:PutItem`) permissions.
+   * **Processor Lambda**: Needs S3 Read/Write (`s3:GetObject`, `s3:PutObject`) and DynamoDB Write (`dynamodb:PutItem`) permissions.
 
 ### 4. Create S3 event Notification
 1. Open the source S3 bucket properties.
 2. Under **Event notifications**, add a trigger on `All object create events` (`s3:ObjectCreated:*`).
-3. Set the destination to the Router Lambda function (`covid-parser-router-lambda`).
+3. Set the destination to the Processor Lambda function (`covid-parser-lambda`).
 
 ### 5. Set up EventBridge Schedule (Automated Trigger)
 To fetch daily data automatically:
@@ -152,7 +191,7 @@ To fetch daily data automatically:
 
 ### 6. Push Code & Trigger
 * Push code to GitHub to verify CI/CD pipelines run cleanly.
-* Trigger the `covid-fetcher-lambda` manually (or wait for the schedule) to fetch, convert, and push raw files to S3, which automatically routes and completes the ETL workflow.
+* Trigger the `covid-fetcher-lambda` manually (or wait for the schedule) to fetch, convert, and push raw files to S3, which automatically triggers the Processor Lambda and completes the ETL workflow.
 
 ---
 
