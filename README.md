@@ -116,7 +116,7 @@ Developer pushes code changes to GitHub
 
 | Service | Role |
 |---|---|
-| **Amazon S3** | Data Lake — stores source uploads (`.json`, `.csv`, `.xml`) and output files |
+| **Amazon S3** | Data Lake — stores source uploads (`.json`, `.csv`, `.xml`) |
 | **AWS Lambda** | ETL Engines — 1 Fetcher Lambda + 1 Unified Processor Lambda |
 | **Amazon DynamoDB** | Clean Record Store — stores final processed states data |
 | **AWS IAM** | Execution roles giving Lambda permissions to S3 and DynamoDB |

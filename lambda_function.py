@@ -79,19 +79,8 @@ def lambda_handler(event, context):
             'body': json.dumps(f"Unsupported file type: {file_extension}")
         }
         
-    # 3. Save output JSON in the S3 Output Bucket
-    output_bucket = os.environ.get("OUTPUT_BUCKET_NAME", "my-covid-output-bucket")
-    file_name = key.split('/')[-1]
-    output_key = f"processed_{file_name.split('.')[0]}.json"
     
-    s3_client.put_object(
-        Bucket=output_bucket,
-        Key=output_key,
-        Body=json.dumps(filtered_data, indent=4),
-        ContentType="application/json"
-    )
-    
-    # 4. Save records to the DynamoDB Table
+    # 3. Save records to the DynamoDB Table
     db_table = os.environ.get("DYNAMODB_TABLE_NAME", "covid_filtered_table")
     table = dynamodb.Table(db_table)
     for state, state_metrics in filtered_data.items():
